@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 BOT_TOKEN = '8742216295:AAHLKP262FLXFeHTIeqdlceMBRbXJBwsvTc'
 GITHUB_TOKEN = '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'
-ADMIN_ID = "8742216295"
+ADMIN_ID = "8728200516"
 REPO_OWNER = "makkqt"
 REPO_NAME = "yes"
 SUCCESS_CODE = asyncio.Queue()
