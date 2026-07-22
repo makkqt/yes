@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = "8749176731:AAHSFhK4uTI19LPeDhXhZsfXMs3VKpWRWno"
-GITHUB_TOKEN = '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'
-REPO_OWNER = "mgsainewlay211"
-REPO_NAME = "Bot5"
+GITHUB_TOKEN = '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'
+REPO_OWNER = "makkqt"
+REPO_NAME = "yes"
 
 # ==================== ADMIN CONFIGURATION ====================
 # Admin List - အားလုံးကို ဒီနေရာမှာ ထည့်ပါ
