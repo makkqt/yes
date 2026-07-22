@@ -16,7 +16,7 @@ import ddddocr
 import numpy as np
 from datetime import datetime, timedelta, timezone
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8980601502:AAFohlUv1IAQtk9iC6XJJy7EOB4UXTPBKIw")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8742216295:AAHLKP262FLXFeHTIeqdlceMBRbXJBwsvTc")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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")
 REPO_OWNER = os.getenv("REPO_OWNER", "makkqt")
 REPO_NAME = os.getenv("REPO_NAME", "Bot")
