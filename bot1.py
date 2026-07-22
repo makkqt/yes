@@ -16,10 +16,10 @@ import ddddocr
 import numpy as np
 from datetime import datetime, timedelta, timezone
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8742216295:AAHLKP262FLXFeHTIeqdlceMBRbXJBwsvTc")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8980601502:AAFohlUv1IAQtk9iC6XJJy7EOB4UXTPBKIw")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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")
 REPO_OWNER = os.getenv("REPO_OWNER", "makkqt")
-REPO_NAME = os.getenv("REPO_NAME", "yes")
+REPO_NAME = os.getenv("REPO_NAME", "Bot")
 ADMIN_ID = os.getenv("ADMIN_ID", "8728200516")
 
 PROXY_LIST = [
@@ -149,14 +149,6 @@ def get_back_keyboard():
     keyboard.add(InlineKeyboardButton("🔙 Back", callback_data="menu_back"))
     return keyboard
 
-def get_scam_button_keyboard():
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton("🛑 STOP SCAM", callback_data="menu_stop"),
-        InlineKeyboardButton("🔙 Back", callback_data="menu_back")
-    )
-    return keyboard
-
 @bot.message_handler(commands=['start'])
 async def start(message):
     user_id = str(message.chat.id)
@@ -164,8 +156,10 @@ async def start(message):
     if message.chat.id not in user_data:
         user_data[message.chat.id] = {}
     
-    if user_id in paid_users or user_id in approve:
+    auth_list, _ = await get_file_content("auth_list.json")
+    if user_id in auth_list and check_key_expiration(auth_list[user_id]):
         approve[message.chat.id] = True
+        paid_users[user_id] = True
         welcome_text = f"✨ STAR LINK CODE HACK ✨\n\n👤 NAME: {user_name}\n🆔 USER ID: {user_id}\n\n✅ သင့်အနေနဲ့ PAID USER ဖြစ်ပါတယ်။"
     else:
         welcome_text = f"✨ STAR LINK CODE HACK ✨\n\n👤 NAME: {user_name}\n🆔 USER ID: {user_id}\n\n⚠️ သင်၏ user ID ကို registered မလုပ်ရသေးပါ။ PAID USER ဖြစ်ရန် နှိပ်ပါ။"
@@ -191,7 +185,8 @@ async def callback_handler(call):
         return
     
     if call.data == "menu_start_scam":
-        if user_id not in paid_users and user_id not in approve:
+        auth_list, _ = await get_file_content("auth_list.json")
+        if user_id not in auth_list or not check_key_expiration(auth_list[user_id]):
             await bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text="❌ Paid User မဟုတ်ပါ။", reply_markup=get_back_keyboard())
             await bot.answer_callback_query(call.id)
             return
@@ -304,7 +299,8 @@ async def genkey(message):
 @bot.message_handler(commands=['portal'])
 async def handle_portal(message):
     user_id = str(message.chat.id)
-    if user_id not in paid_users and user_id not in approve:
+    auth_list, _ = await get_file_content("auth_list.json")
+    if user_id not in auth_list or not check_key_expiration(auth_list[user_id]):
         await bot.reply_to(message, "❌ Paid User မဟုတ်ပါ။")
         return
     args = message.text.split(maxsplit=1)
@@ -321,13 +317,13 @@ def check_key_expiration(expiration_time):
     try:
         if isinstance(expiration_time, dict):
             expiry = expiration_time.get("expires_at")
-            if expiry == "9999-12-31T23:59:59Z":
+            if not expiry or str(expiry).startswith("9999"):
                 return True
-            exp_time = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+            exp_time = datetime.fromisoformat(str(expiry).replace("Z", "+00:00"))
             return datetime.now(timezone.utc) < exp_time
-        return False
+        return True
     except:
-        return False
+        return True
 
 def iter_codes(mode, start_digit=None):
     if mode in ["6", "7", "8"]:
