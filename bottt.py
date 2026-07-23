@@ -8,10 +8,10 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "8749176731:AAHSFhK4uTI19LPeDhXhZsfXMs3VKpWRWno"
-GITHUB_TOKEN = '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'
-REPO_OWNER = "mgsainewlay211"
-REPO_NAME = "Bot5"
+BOT_TOKEN = "8867816797:AAFXkNP8MJEIjAHZRsRAUDhAn_EgmeLYowg"
+GITHUB_TOKEN = '8971195833:AAGJVTAkqMI7UebWGC7dh2oY3CGvxPm-Zx4'
+REPO_OWNER = "makkqt"
+REPO_NAME = "yes"
 
 # ==================== ADMIN CONFIGURATION ====================
 ADMINлю = [
