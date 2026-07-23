@@ -1052,7 +1052,8 @@ async def main():
     _connector = aiohttp.TCPConnector(limit=20000, ssl=False)
     session = aiohttp.ClientSession(connector=_connector, connector_owner=False)
     try:
-        async asyncio.gather(web_server(), github_update_scheduler(), start_polling())
+        # ပြင်ဆင်ထားသည့်နေရာ (async အစား await သုံးထားသည်)
+        await asyncio.gather(web_server(), github_update_scheduler(), start_polling())
     finally:
         await session.close()
         await _connector.close()
