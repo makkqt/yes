@@ -9,9 +9,9 @@ from datetime import datetime, timedelta, timezone
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = "8867816797:AAFXkNP8MJEIjAHZRsRAUDhAn_EgmeLYowg"
-GITHUB_TOKEN = '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'
-REPO_OWNER = "kuranomi10"
-REPO_NAME = "Bot"
+GITHUB_TOKEN = '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'
+REPO_OWNER = "makkqt"
+REPO_NAME = "yes"
 
 # ==================== ADMIN CONFIGURATION ====================
 ADMINлю = [
