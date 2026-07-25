@@ -8,15 +8,15 @@ import numpy as np
 from datetime import datetime, timedelta, timezone
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "8695133645:AAEkMu_AlWRa9iIIgyTlSIHT-YGZNP5n9DI"
-GITHUB_TOKEN = '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'
-REPO_OWNER = "makkqt"
-REPO_NAME = "yes"
+BOT_TOKEN = "8956226519:AAGq2JHV44oGcXItrYVShOTHHnEoo9XQCvU"
+GITHUB_TOKEN = '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'
+REPO_OWNER = "kuranomi10"
+REPO_NAME = "S"
 
 # ==================== ADMIN CONFIGURATION ====================
 ADMINS = [
-    "7366841341",     # @kuranomi10 (Main Admin)
-    "8728200516"      # @makxcross_admin (Co-Admin)
+    "7366841341",     
+    "8728200516"      
 ]
 
 ADMIN_USERNAME = "@kuranomi | @makxcross_admin"
@@ -1869,4 +1869,4 @@ async def main():
         await _connector.close()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(main()
