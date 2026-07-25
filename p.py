@@ -5,6 +5,16 @@ import cv2
 import ddddocr
 import numpy as np
 from datetime import datetime, timedelta, timezone
+import asyncio
+import os
+import time
+import uuid
+import random
+import string
+import base64
+import json
+import concurrent.futures
+import re
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = "8956226519:AAGq2JHV44oGcXItrYVShOTHHnEoo9XQCvU"
@@ -114,7 +124,6 @@ _session_cache_lock = asyncio.Lock()
 _ocr_executor = concurrent.futures.ThreadPoolExecutor(max_workers=20)
 
 def get_cached_session(proxy=None):
-    """Reuse sessions and attach proxy dynamically to prevent IP ban"""
     proxy_url = proxy or get_proxy_round_robin()
     key = proxy_url or "default"
     if key not in _connection_pool or _connection_pool[key].closed:
@@ -630,7 +639,7 @@ Key ရရှိပြီးပါက PAID USER ဖြစ်ရန် နှိ�
             await bot.edit_message_text(
                 chat_id=chat_id,
                 message_id=call.message.message_id,
-                text=f"🙏 ကျေးဇူးပြု၍ Paid ဝယ်ယူပါ။\n\nUSER ID: {user_id}\n\nAdmin မှ သင့် ID ကို အတည်ပြုပြီးပါက PAID USER ဖြစ်ပါမည်။\n👨‍💻 Admins: {ADMIN_USERNAME} & @makxchemistry",
+                text=f"🙏 ကျေးဇူးပြု၍ Paid ဝယ်ယူပါ။\n\nUSER ID: {user_id}\n\nAdmin မှ သင့် ID ကို အတည်ပြုပြီးပါက PAID USER ဖြစ်ပါမည်။\n👨‍💻 Admins: {ADMIN_USERNAME}",
                 reply_markup=get_back_keyboard()
             )
         await bot.answer_callback_query(call.id)
@@ -1499,7 +1508,6 @@ def replace_mac(url, new_mac):
     return f"{url}{separator}mac={new_mac}"
 
 async def get_session_id_cached(session_url):
-    """Cached session ID with rotating proxies to prevent IP blocking"""
     cache_key = session_url[:60]
     async with _session_cache_lock:
         if cache_key in _session_cache:
@@ -1514,7 +1522,6 @@ async def get_session_id_cached(session_url):
     return session_id, proxy
 
 async def get_session_id_optimized(session_url):
-    """Faster session ID retrieval using dynamic proxies"""
     mac = get_mac()
     session_url = replace_mac(session_url, new_mac=mac)
     
@@ -1535,7 +1542,6 @@ async def get_session_id_optimized(session_url):
     except:
         pass
     
-    # Retry with another proxy if failed
     new_proxy = get_proxy_round_robin()
     new_session_obj, _ = get_cached_session(new_proxy)
     try:
@@ -1550,7 +1556,6 @@ async def get_session_id_optimized(session_url):
     return None, proxy
 
 async def prefetch_captcha_batch(session_id, proxy, count=3):
-    """Pre-fetch multiple captcha images in parallel using proxies"""
     session_obj, _ = get_cached_session(proxy)
     async def fetch_one():
         try:
@@ -1566,7 +1571,6 @@ async def prefetch_captcha_batch(session_id, proxy, count=3):
     return valid
 
 async def perform_check_optimized(session_url, code, chat_id, scan_id=None, recheck=False, message=None):
-    """Fast check with robust error handling, proxy rotation, and captcha handling"""
     if not recheck:
         current_task = scan_tasks.get(chat_id)
         if not current_task or current_task.get("scan_id") != scan_id:
@@ -1638,7 +1642,6 @@ async def perform_check_optimized(session_url, code, chat_id, scan_id=None, rech
                 limited_texts[chat_id] = []
             limited_texts[chat_id].append(code)
     except Exception as e:
-        # Errors handled safely without crashing the scanner thread
         pass
 
 def Minute_to_Hour(total_minutes):
