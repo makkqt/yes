@@ -1,3 +1,5 @@
+import aiohttp
+import asyncio
 from telebot.async_telebot import AsyncTeleBot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiohttp import web
